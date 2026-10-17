@@ -6,7 +6,7 @@ class Dashboard(unittest.TestCase):
   root=Path(__file__).resolve().parents[1]
   with tempfile.TemporaryDirectory() as folder:
    app=Path(folder)
-   for name in ['app.py','finance.py','ai.py']:shutil.copy(root/name,app/name)
+   for name in ['app.py','finance.py','ai.py','importing.py']:shutil.copy(root/name,app/name)
    shutil.copytree(root/'examples',app/'examples')
    at=AppTest.from_file(str(app/'app.py')).run()
    self.assertEqual(len(at.exception),0)

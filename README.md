@@ -59,3 +59,11 @@ python -m unittest discover -s tests -v
 Financial tests cover cross-month transfers, person views, balances, undo, currencies, duplicate imports, atomic failure, refunds, Swedish numbers and remembered categories. The package includes a fictional demonstration household. Live Ollama inference depends on your local installation and downloaded models.
 
 References: https://docs.ollama.com/capabilities/structured-outputs and https://docs.streamlit.io/.
+
+## Excel and multilingual bank exports
+
+Import `.xls` (Excel 97–2003), `.xlsx`, or CSV from **Accounts & import**. Reinstall requirements after updating. Excel files use local xlrd/openpyxl readers; no upload service or model is involved.
+
+Select the worksheet and the row containing column names. A source preview shows the selected data. Common Swedish, English, German, French and Spanish header names receive conservative suggestions. Unknown or ambiguous headers remain unmapped: select any column manually, regardless of language. Choose signed amounts or separate debit/credit columns, date format for text dates, decimal separator for text amounts, and optional bank transaction ID. Native Excel dates and numeric cells are handled independently of text locale settings. Review the normalised preview and explicitly confirm before importing. Amount signs can be reversed for exports that record expenses as positive.
+
+Ambiguous day/month dates are never inferred from language. Debit and credit magnitudes are used; a row containing both is rejected. Invalid dates, amounts or empty descriptions block the entire import. Blank rows are skipped. Remove footer totals and balance rows before import; these are not automatically classified. Password-protected workbooks, scanned documents, and HTML files merely renamed `.xls` are not supported. Formula cells depend on saved cached values; recalculate and save the workbook in Excel if values are missing.

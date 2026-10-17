@@ -3,3 +3,6 @@ pandas>=2.2,<3
 plotly>=5.24,<7
 -e ./vendor/ollaborate
 -e ./vendor/libreindex
+
+xlrd>=2.0.1,<3
+openpyxl>=3.1.5,<4

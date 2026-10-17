@@ -1,10 +1,11 @@
 from pathlib import Path
-import csv,io,json
+import csv,io,json,hashlib
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from finance import Ledger,CATEGORIES,money
 import ai
+from importing import read_table, sheet_names, suggest_columns, mapped_csv
 
 st.set_page_config(page_title='LocalLedger',page_icon='◉',layout='wide')
 st.markdown('''<style>.stApp{background:#f5f7fb}h1,h2,h3{color:#162b4d}div[data-testid="stMetric"]{background:white;padding:20px;border-radius:14px;border:1px solid #e5eaf2}</style>''',unsafe_allow_html=True)
@@ -60,17 +61,41 @@ with tabs[1]:
     if balances:
         st.dataframe(pd.DataFrame([{**a,'opening':a['opening']/100,'balance':a['balance']/100} for a in balances]),hide_index=True)
         account=st.selectbox('Import into account',accounts,format_func=lambda a:f"{a['name']} · {a['owner']}")
-        upload=st.file_uploader('Bank CSV',type=['csv'])
-        delim=st.selectbox('CSV separator',[',',';','\t']);dec=st.selectbox('Decimal separator',['.',',']);fmt=st.selectbox('Date format',['%Y-%m-%d','%d/%m/%Y','%d.%m.%Y','%Y%m%d'])
+        upload=st.file_uploader('Bank export',type=['csv','xls','xlsx'])
         if upload:
             try:
-                text=upload.getvalue().decode('utf-8-sig');reader=csv.DictReader(io.StringIO(text),delimiter=delim);fields=reader.fieldnames or []
-                st.dataframe(pd.DataFrame(list(reader)).head(10),hide_index=True)
-                dc=st.selectbox('Date column',fields);tc=st.selectbox('Description column',fields,index=min(1,len(fields)-1));ac=st.selectbox('Signed amount column',fields,index=min(2,len(fields)-1));ic=st.selectbox('Stable bank transaction ID (recommended)',['None']+fields)
-                st.caption('Positive amounts are incoming; negative amounts are outgoing. Imports are atomic. Without bank IDs, exact repeated rows use occurrence-based deduplication; review overlapping exports.')
-                if st.button('Import records'):
-                    st.success(ledger.import_csv(text,account['id'],dc,tc,ac,fmt,dec,delim,None if ic=='None' else ic));st.rerun()
-            except Exception as e:st.error(str(e))
+                payload=upload.getvalue();excel=upload.name.lower().endswith(('.xls','.xlsx'))
+                header=int(st.number_input('Header row (1-based)',min_value=1,value=1))-1
+                sheet=st.selectbox('Worksheet',sheet_names(payload,upload.name)) if excel else 0
+                delim=',';encoding='utf-8-sig'
+                if not excel:
+                    delim=st.selectbox('CSV separator',[',',';','\t'])
+                    encoding=st.selectbox('CSV encoding',['utf-8-sig','cp1252'])
+                frame=read_table(payload,upload.name,header,sheet,delim,encoding)
+                st.write('Source preview');st.dataframe(frame.head(10),hide_index=True)
+                hints=suggest_columns(frame.columns);fields=['— Select —']+list(frame.columns)
+                st.caption('Local header suggestions recognise common Swedish, English, German, French and Spanish names. Review every mapping. Unrecognised or ambiguous headers require manual selection.')
+                split=st.checkbox('Separate debit and credit columns',value=bool(hints['debit'] and hints['credit'] and not hints['amount']))
+                mapping={}
+                for role,label in [('date','Date'),('description','Description')]+([('debit','Debit / outgoing'),('credit','Credit / incoming')] if split else [('amount','Signed amount')])+[('id','Bank transaction ID (optional)')]:
+                    choice=st.selectbox(label+' column',fields,index=fields.index(hints[role]) if hints[role] else 0,key=f'map-{upload.name}-{header}-{sheet}-{role}')
+                    mapping[role]=None if choice==fields[0] else choice
+                fmt=st.selectbox('Text date format',['%Y-%m-%d','%d/%m/%Y','%m/%d/%Y','%d.%m.%Y','%Y%m%d','%d-%m-%Y'])
+                dec=st.selectbox('Decimal separator in text amounts',['.',','])
+                reverse=st.checkbox('Reverse amount signs (export uses positive for spending)')
+                st.caption('Native Excel dates and numeric cells retain their types. Text dates and amounts use the settings above. Debit/credit values use their magnitudes. Totals and balance rows must be removed from the source before import.')
+                try:
+                    canonical,preview=mapped_csv(frame,mapping,fmt,dec,split,reverse)
+                    st.write('Transactions to import');st.dataframe(preview.head(20),hide_index=True)
+                    st.caption(f'{len(preview)} transactions. Positive = incoming; negative = outgoing. Existing duplicate detection and transfer review still apply.')
+                    approved=st.checkbox('I have checked the mapping, dates, and amount signs',key='approve-'+hashlib.sha256((str(account['id'])+canonical).encode()).hexdigest())
+                    if st.button('Import records',disabled=not approved):
+                        result=ledger.import_csv(canonical,account['id'],'date','description','amount',id_col='id' if mapping.get('id') else None)
+                        st.session_state['import_result']=result;st.rerun()
+                except ValueError as e:st.info(str(e))
+            except Exception as e:st.error(f'Could not read export: {e}')
+        if 'import_result' in st.session_state:st.success(st.session_state.pop('import_result'))
+
 with tabs[2]:
     rows=ledger.rows()
     if rows:
